@@ -10,6 +10,7 @@ from app.state import GraphState
 
 
 class GraphPayload(TypedDict, total=False):
+    run_id: str
     user_input: str
     project_path: str
     issue_summary: Dict[str, Any]
