@@ -2,14 +2,57 @@ import json
 from app.agents.member3_fix_planner.prompt import FIX_PLANNER_PROMPT
 from app.agents.member3_fix_planner.tool_task_plan_writer import build_fix_steps
 from app.shared.llm import get_worker_llm
-from app.shared.logger import log_text, log_trace
+from app.shared.logger import (
+    log_text,
+    log_trace,
+    log_agent_start,
+    log_tool_call,
+    log_agent_end,
+)
 from app.state import GraphState, AgentTraceEntry
+
+
+def _best_direct_fix(suspicious_statement: str, current_fix: str) -> str:
+    normalized = (current_fix or "").strip().lower()
+
+    if suspicious_statement == 'return result["message"]':
+        return 'Replace `return result["message"]` with `return {"success": False, "message": "Invalid credentials"}`.'
+
+    if suspicious_statement == "return result['message']":
+        return 'Replace `return result[\'message\']` with `return {"success": False, "message": "Invalid credentials"}`.'
+
+    if suspicious_statement == 'return profile["non_existing_key"]':
+        return 'Replace `return profile["non_existing_key"]` with a valid existing profile value, such as `return profile["name"]` if that is the intended field.'
+
+    if suspicious_statement == "return profile['non_existing_key']":
+        return 'Replace `return profile[\'non_existing_key\']` with a valid existing profile value, such as `return profile["name"]` if that is the intended field.'
+
+    if normalized:
+        return current_fix
+
+    return "Replace the suspicious statement with the correct logic."
 
 
 def run_fix_planner(state: GraphState) -> GraphState:
     log_text("Fix Planner started")
+    log_agent_start(
+        state.run_id,
+        "Fix Planner",
+        {
+            "relevant_files": state.relevant_files,
+            "code_findings": state.code_findings,
+        },
+    )
 
     steps = build_fix_steps(state.relevant_files)
+    log_tool_call(
+        state.run_id,
+        "Fix Planner",
+        "build_fix_steps",
+        {"relevant_files": state.relevant_files},
+        {"steps": steps},
+    )
+
     suspicious_statement = ""
     probable_cause = ""
 
@@ -48,13 +91,7 @@ Probable cause:
         parsed = {}
 
     direct_fix = parsed.get("direct_fix", "") if isinstance(parsed, dict) else ""
-    if not direct_fix:
-        if suspicious_statement == 'return result["message"]':
-            direct_fix = 'Replace `return result["message"]` with `return {"success": False, "message": "Invalid credentials"}`.'
-        elif suspicious_statement == 'return profile["non_existing_key"]':
-            direct_fix = 'Replace `return profile["non_existing_key"]` with a valid existing profile value.'
-        else:
-            direct_fix = "Replace the suspicious statement with the correct logic."
+    direct_fix = _best_direct_fix(suspicious_statement, direct_fix)
 
     implementation_steps = parsed.get("implementation_steps", []) if isinstance(parsed, dict) else []
     if len(implementation_steps) < 3:
@@ -89,11 +126,21 @@ Probable cause:
     )
 
     log_trace({
+        "run_id": state.run_id,
         "agent": "Fix Planner",
         "tool": "build_fix_steps",
         "input": state.relevant_files,
         "output_summary": "Code-aware fix plan prepared",
     })
+
+    log_agent_end(
+        state.run_id,
+        "Fix Planner",
+        {
+            "fix_plan": state.fix_plan,
+            "trace_count": len(state.trace),
+        },
+    )
 
     log_text("Fix Planner completed")
     return state

@@ -1,27 +1,34 @@
-from app.agents.member1_issue_analyst.agent import run_issue_analyst
-from app.agents.member2_codebase_investigator.agent import run_codebase_investigator
-from app.agents.member3_fix_planner.agent import run_fix_planner
-from app.agents.member4_qa_reviewer.agent import run_qa_reviewer
+from app.orchestrator.graph import compiled_bug_triage_graph
+from app.shared.logger import create_run_id, log_workflow_summary
 from app.state import GraphState
 
 
 def run_full_workflow(user_input: str, project_path: str = "") -> GraphState:
-    state = GraphState(
-        user_input=user_input,
-        project_path=project_path,
-    )
+    run_id = create_run_id()
 
-    state = run_issue_analyst(state)
-    state = run_codebase_investigator(state)
-    state = run_fix_planner(state)
-    state = run_qa_reviewer(state)
-
-    state.final_report = {
-        "issue_summary": state.issue_summary,
-        "relevant_files": state.relevant_files,
-        "code_findings": state.code_findings,
-        "fix_plan": state.fix_plan,
-        "qa_report": state.qa_report,
+    initial_state = {
+        "run_id": run_id,
+        "user_input": user_input,
+        "project_path": project_path,
+        "issue_summary": {},
+        "relevant_files": [],
+        "code_findings": {},
+        "fix_plan": {},
+        "qa_report": {},
+        "final_report": {},
+        "trace": [],
     }
 
-    return state
+    result = compiled_bug_triage_graph.invoke(initial_state)
+    final_state = GraphState(**result)
+
+    log_workflow_summary(
+        run_id,
+        {
+            "relevant_files": final_state.relevant_files,
+            "trace_count": len(final_state.trace),
+            "final_report_keys": list(final_state.final_report.keys()),
+        },
+    )
+
+    return final_state

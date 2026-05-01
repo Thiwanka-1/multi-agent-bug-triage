@@ -8,7 +8,7 @@ router = APIRouter()
 
 @router.get("/health")
 def health_check():
-    return {"ok": True, "message": "Backend is running"}
+    return {"ok": True, "message": "Backend is running", "orchestration_engine": "LangGraph"}
 
 
 @router.post("/run")
@@ -19,6 +19,8 @@ def run_agents(payload: RunRequest):
     )
 
     return {
+        "run_id": result.run_id,
+        "orchestration_engine": "LangGraph",
         "issue_summary": result.issue_summary,
         "relevant_files": result.relevant_files,
         "code_findings": result.code_findings,
@@ -42,6 +44,8 @@ def run_agents_with_upload(
     )
 
     return {
+        "run_id": result.run_id,
+        "orchestration_engine": "LangGraph",
         "upload_kind": upload_kind,
         "project_path": project_path,
         "issue_summary": result.issue_summary,

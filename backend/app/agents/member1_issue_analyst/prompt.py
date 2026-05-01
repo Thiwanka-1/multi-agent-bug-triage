@@ -7,6 +7,9 @@ Rules:
 - Use only the user's bug report.
 - Do not invent technical details.
 - Keep the output concise.
+- expected_behavior must describe both:
+  1. what should happen when the flow succeeds
+  2. what should happen when the flow fails safely
 
 Return JSON only in this format:
 

@@ -4,7 +4,13 @@ from app.agents.member2_codebase_investigator.tool_repo_search import search_rep
 from app.agents.member2_codebase_investigator.tool_file_reader import read_file_excerpt
 from app.agents.member2_codebase_investigator.tool_code_hints import extract_code_hints
 from app.shared.llm import get_worker_llm
-from app.shared.logger import log_text, log_trace
+from app.shared.logger import (
+    log_text,
+    log_trace,
+    log_agent_start,
+    log_tool_call,
+    log_agent_end,
+)
 from app.state import GraphState, AgentTraceEntry
 
 
@@ -28,10 +34,26 @@ def _derive_probable_cause_from_statement(statement: str) -> str:
 
 def run_codebase_investigator(state: GraphState) -> GraphState:
     log_text("Codebase Investigator started")
+    log_agent_start(
+        state.run_id,
+        "Codebase Investigator",
+        {
+            "project_path": state.project_path,
+            "issue_summary": state.issue_summary,
+        },
+    )
 
     keywords = ["login", "credentials", "password", "username", "auth", "invalid", "crash"]
     matches = search_repository(state.project_path, keywords)
     selected_files = matches[:1]
+
+    log_tool_call(
+        state.run_id,
+        "Codebase Investigator",
+        "search_repository",
+        {"project_path": state.project_path, "keywords": keywords},
+        {"matches": matches, "selected_files": selected_files},
+    )
 
     file_context_blocks = []
     hint_blocks = []
@@ -39,6 +61,14 @@ def run_codebase_investigator(state: GraphState) -> GraphState:
 
     for file_path in selected_files:
         excerpt = read_file_excerpt(file_path, max_chars=3000)
+        log_tool_call(
+            state.run_id,
+            "Codebase Investigator",
+            "read_file_excerpt",
+            {"file_path": file_path, "max_chars": 3000},
+            {"excerpt_preview": excerpt[:500]},
+        )
+
         if excerpt.strip():
             file_context_blocks.append(f"FILE: {file_path}\n{excerpt}")
 
@@ -46,6 +76,14 @@ def run_codebase_investigator(state: GraphState) -> GraphState:
                 exact_suspicious_statement = _extract_exact_suspicious_statement(excerpt)
 
             hints = extract_code_hints(excerpt)
+            log_tool_call(
+                state.run_id,
+                "Codebase Investigator",
+                "extract_code_hints",
+                {"file_excerpt_preview": excerpt[:500]},
+                {"hints": hints},
+            )
+
             if hints:
                 hint_blocks.append(
                     f"FILE: {file_path}\n" + "\n".join(f"- {hint}" for hint in hints)
@@ -116,11 +154,22 @@ If an exact suspicious statement is provided, use it directly.
     )
 
     log_trace({
+        "run_id": state.run_id,
         "agent": "Codebase Investigator",
         "tool": "search_repository + read_file_excerpt + extract_code_hints",
         "input": state.project_path,
         "output_summary": f"{len(selected_files)} top-ranked file(s) analyzed",
     })
+
+    log_agent_end(
+        state.run_id,
+        "Codebase Investigator",
+        {
+            "relevant_files": state.relevant_files,
+            "code_findings": state.code_findings,
+            "trace_count": len(state.trace),
+        },
+    )
 
     log_text("Codebase Investigator completed")
     return state
